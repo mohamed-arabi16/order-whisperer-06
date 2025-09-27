@@ -25,6 +25,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { z } from 'zod';
+import { useRequestDeduplication } from "@/hooks/useRequestDeduplication";
 import { POSAnalyticsTab } from "./POSAnalyticsTab";
 import { TableManagementTab } from "./TableManagementTab";
 import { NotificationManager } from "./NotificationManager";
@@ -92,6 +93,7 @@ const orderSchema = z.object({
 export const POSDashboard: React.FC = () => {
   const { t, isRTL, language } = useTranslation();
   const { user, profile, tenantId, loading: authLoading } = useAuth();
+  const { executeRequest } = useRequestDeduplication();
   const [orders, setOrders] = useState<POSOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [tablesLoading, setTablesLoading] = useState(true);
@@ -153,92 +155,83 @@ export const POSDashboard: React.FC = () => {
   }, [tablesMap]);
 
   const loadOrders = useCallback(async () => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log("POSDashboard: loadOrders called with tenantId:", tenantId);
-    }
-    
     if (!tenantId) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log("POSDashboard: No tenantId available, skipping order load");
-      }
       setOrdersLoading(false);
       return;
     }
     
+    const requestKey = `load-orders-${tenantId}`;
+    
     try {
-      setOrdersLoading(true);
-      if (process.env.NODE_ENV === 'development') {
-        console.log("POSDashboard: Loading orders for tenantId:", tenantId);
-      }
-      
-      const { data, error } = await supabase
-        .from('pos_orders')
-        .select('*')
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      await executeRequest(requestKey, async () => {
+        setOrdersLoading(true);
+        
+        const { data, error } = await supabase
+          .from('pos_orders')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .order('created_at', { ascending: false })
+          .limit(50);
 
-      if (error) {
-        console.error("POSDashboard: Error loading orders:", error);
-        toast.error("Failed to load orders. Please refresh and try again.");
-        throw error;
-      }
-
-      if (process.env.NODE_ENV === 'development') {
-        console.log("POSDashboard: Raw orders fetched:", data?.length || 0, "orders");
-      }
-
-      const validatedOrders = (data || []).map(order => {
-        const result = orderSchema.safeParse(order);
-        if (!result.success) {
-          console.error("POSDashboard: Malformed order data received:", result.error.issues, "Original data:", order);
-          return null;
+        if (error) {
+          console.error("POSDashboard: Error loading orders:", error);
+          toast.error("Failed to load orders. Please refresh and try again.");
+          throw error;
         }
-        return result.data as POSOrder;
-      }).filter(Boolean) as POSOrder[];
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log("POSDashboard: Validated orders loaded:", validatedOrders.length, "orders");
-      }
-      setOrders(validatedOrders);
-      
-      if (validatedOrders.length === 0 && process.env.NODE_ENV === 'development') {
-        console.log("POSDashboard: No orders found for tenant");
-      }
+        const validatedOrders = (data || []).map(order => {
+          const result = orderSchema.safeParse(order);
+          if (!result.success) {
+            console.error("POSDashboard: Malformed order data received:", result.error.issues);
+            return null;
+          }
+          return result.data as POSOrder;
+        }).filter(Boolean) as POSOrder[];
+
+        setOrders(validatedOrders);
+        return validatedOrders;
+      });
     } catch (error) {
       console.error('POSDashboard: Error loading orders:', error);
       toast.error(t('pos.dashboard.loadError'));
     } finally {
       setOrdersLoading(false);
     }
-  }, [tenantId, t]);
+  }, [tenantId, t, executeRequest]);
 
   const loadTables = useCallback(async () => {
     if (!tenantId) {
       setTablesLoading(false);
       return;
     }
+    
+    const requestKey = `load-tables-${tenantId}`;
+    
     try {
-      setTablesLoading(true);
-      const { data, error } = await supabase
-        .from('restaurant_tables')
-        .select('id, table_number')
-        .eq('tenant_id', tenantId);
+      await executeRequest(requestKey, async () => {
+        setTablesLoading(true);
+        
+        const { data, error } = await supabase
+          .from('restaurant_tables')
+          .select('id, table_number')
+          .eq('tenant_id', tenantId);
 
-      if (error) throw error;
-      
-      const tableMap = (data || []).reduce((acc, table) => {
-        acc[table.id] = { table_number: table.table_number };
-        return acc;
-      }, {} as Record<string, { table_number: string }>);
-      
-      setTablesMap(tableMap);
+        if (error) throw error;
+        
+        const tableMap = (data || []).reduce((acc, table) => {
+          acc[table.id] = { table_number: table.table_number };
+          return acc;
+        }, {} as Record<string, { table_number: string }>);
+        
+        setTablesMap(tableMap);
+        return tableMap;
+      });
     } catch (error) {
       console.error('Error loading tables:', error);
     } finally {
       setTablesLoading(false);
     }
-  }, [tenantId]);
+  }, [tenantId, executeRequest]);
 
   const subscribeToOrders = useCallback(() => {
     if (!tenantId) {
@@ -334,15 +327,15 @@ export const POSDashboard: React.FC = () => {
     };
   }, [tenantId, t, tablesMap, fetchAndCacheTable, playNotificationSound]);
 
-  // Load orders, tables and subscribe when tenantId is available
+  // Load orders, tables and subscribe when tenantId is available - prevent duplicate calls
   useEffect(() => {
-    if (tenantId) {
+    if (tenantId && !ordersLoading && !tablesLoading) {
       loadOrders();
       loadTables();
       const unsubscribe = subscribeToOrders();
       return unsubscribe;
     }
-  }, [tenantId, loadOrders, loadTables, subscribeToOrders]);
+  }, [tenantId]); // Remove callback dependencies to prevent infinite loops
 
   const updateOrderStatus = async (orderId: string, newStatus: POSOrder['status']) => {
     try {
@@ -532,9 +525,10 @@ export const POSDashboard: React.FC = () => {
     </Card>
   );
 
-  const isLoading = authLoading || ordersLoading || tablesLoading;
+  // Show loading only for initial auth loading, not for data loading
+  const isInitialLoading = authLoading && !tenantId;
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="animate-spin">

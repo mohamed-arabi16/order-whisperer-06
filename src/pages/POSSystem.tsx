@@ -79,6 +79,7 @@ const POSSystem = (): JSX.Element => {
     }
   }, [loading, user, tenantId, isAdmin, checkingSubscription, tenant]);
 
+  // Only show loading if we're actually loading and haven't timed out
   if ((loading || checkingSubscription) && !loadingTimeout) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 flex items-center justify-center">
@@ -89,6 +90,11 @@ const POSSystem = (): JSX.Element => {
         </div>
       </div>
     );
+  }
+
+  // Force show content if timeout reached, even if still loading
+  if (loadingTimeout && user) {
+    // Skip further loading checks and show dashboard
   }
 
   if (loadingTimeout) {
