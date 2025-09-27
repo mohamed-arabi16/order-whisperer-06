@@ -153,17 +153,23 @@ export const POSDashboard: React.FC = () => {
   }, [tablesMap]);
 
   const loadOrders = useCallback(async () => {
-    console.log("POSDashboard: loadOrders called with tenantId:", tenantId);
+    if (process.env.NODE_ENV === 'development') {
+      console.log("POSDashboard: loadOrders called with tenantId:", tenantId);
+    }
     
     if (!tenantId) {
-      console.log("POSDashboard: No tenantId available, skipping order load");
+      if (process.env.NODE_ENV === 'development') {
+        console.log("POSDashboard: No tenantId available, skipping order load");
+      }
       setOrdersLoading(false);
       return;
     }
     
     try {
       setOrdersLoading(true);
-      console.log("POSDashboard: Loading orders for tenantId:", tenantId);
+      if (process.env.NODE_ENV === 'development') {
+        console.log("POSDashboard: Loading orders for tenantId:", tenantId);
+      }
       
       const { data, error } = await supabase
         .from('pos_orders')
@@ -174,10 +180,13 @@ export const POSDashboard: React.FC = () => {
 
       if (error) {
         console.error("POSDashboard: Error loading orders:", error);
+        toast.error("Failed to load orders. Please refresh and try again.");
         throw error;
       }
 
-      console.log("POSDashboard: Raw orders fetched:", data?.length || 0, "orders");
+      if (process.env.NODE_ENV === 'development') {
+        console.log("POSDashboard: Raw orders fetched:", data?.length || 0, "orders");
+      }
 
       const validatedOrders = (data || []).map(order => {
         const result = orderSchema.safeParse(order);
@@ -188,10 +197,12 @@ export const POSDashboard: React.FC = () => {
         return result.data as POSOrder;
       }).filter(Boolean) as POSOrder[];
 
-      console.log("POSDashboard: Validated orders loaded:", validatedOrders.length, "orders");
+      if (process.env.NODE_ENV === 'development') {
+        console.log("POSDashboard: Validated orders loaded:", validatedOrders.length, "orders");
+      }
       setOrders(validatedOrders);
       
-      if (validatedOrders.length === 0) {
+      if (validatedOrders.length === 0 && process.env.NODE_ENV === 'development') {
         console.log("POSDashboard: No orders found for tenant");
       }
     } catch (error) {
@@ -231,11 +242,15 @@ export const POSDashboard: React.FC = () => {
 
   const subscribeToOrders = useCallback(() => {
     if (!tenantId) {
-      console.log("POSDashboard: No tenantId for real-time subscription");
+      if (process.env.NODE_ENV === 'development') {
+        console.log("POSDashboard: No tenantId for real-time subscription");
+      }
       return () => {};
     }
     
-    console.log("POSDashboard: Subscribing to orders for tenantId:", tenantId);
+    if (process.env.NODE_ENV === 'development') {
+      console.log("POSDashboard: Subscribing to orders for tenantId:", tenantId);
+    }
 
     const channel = supabase
       .channel('pos-orders-changes')
@@ -248,7 +263,9 @@ export const POSDashboard: React.FC = () => {
           filter: `tenant_id=eq.${tenantId}`
         },
         (payload) => {
-          console.log('POSDashboard: Real-time event received:', payload.eventType, payload);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('POSDashboard: Real-time event received:', payload.eventType, payload);
+          }
           
           const result = orderSchema.safeParse(payload.new);
           if (!result.success) {
@@ -258,12 +275,16 @@ export const POSDashboard: React.FC = () => {
           const validatedOrder = result.data as POSOrder;
 
           if (payload.eventType === 'INSERT') {
-            console.log('POSDashboard: New order inserted via real-time:', validatedOrder);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('POSDashboard: New order inserted via real-time:', validatedOrder);
+            }
             setOrders(prev => {
               // Check if order already exists to prevent duplicates
               const exists = prev.some(order => order.id === validatedOrder.id);
               if (exists) {
-                console.log('POSDashboard: Order already exists, skipping duplicate');
+                if (process.env.NODE_ENV === 'development') {
+                  console.log('POSDashboard: Order already exists, skipping duplicate');
+                }
                 return prev;
               }
               return [validatedOrder, ...prev];
@@ -281,7 +302,9 @@ export const POSDashboard: React.FC = () => {
 
             playNotificationSound();
           } else if (payload.eventType === 'UPDATE') {
-            console.log('POSDashboard: Order updated via real-time:', validatedOrder);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('POSDashboard: Order updated via real-time:', validatedOrder);
+            }
             setOrders(prev => 
               prev.map(order => 
                 order.id === validatedOrder.id ? validatedOrder : order
@@ -297,12 +320,16 @@ export const POSDashboard: React.FC = () => {
           toast.error('Real-time connection failed. Orders may not update automatically.');
         } else {
           setSubscriptionStatus(status.toLowerCase());
-          console.log('POSDashboard: Real-time subscription status:', status);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('POSDashboard: Real-time subscription status:', status);
+          }
         }
       });
 
     return () => {
-      console.log("POSDashboard: Unsubscribing from real-time channel");
+      if (process.env.NODE_ENV === 'development') {
+        console.log("POSDashboard: Unsubscribing from real-time channel");
+      }
       supabase.removeChannel(channel);
     };
   }, [tenantId, t, tablesMap, fetchAndCacheTable, playNotificationSound]);
@@ -552,7 +579,9 @@ export const POSDashboard: React.FC = () => {
   }
 
   const pendingOrders = filterOrdersByStatus('pending_approval');
-  console.log("POSDashboard: Filtered pending orders:", pendingOrders);
+  if (process.env.NODE_ENV === 'development') {
+    console.log("POSDashboard: Filtered pending orders:", pendingOrders);
+  }
 
   return (
     <div className="container mx-auto p-6 pt-24 space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
