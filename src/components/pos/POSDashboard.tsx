@@ -329,13 +329,18 @@ export const POSDashboard: React.FC = () => {
 
   // Load orders, tables and subscribe when tenantId is available - prevent duplicate calls
   useEffect(() => {
-    if (tenantId && !ordersLoading && !tablesLoading) {
-      loadOrders();
-      loadTables();
-      const unsubscribe = subscribeToOrders();
-      return unsubscribe;
+    if (!tenantId) {
+      return;
     }
-  }, [tenantId]); // Remove callback dependencies to prevent infinite loops
+
+    loadOrders();
+    loadTables();
+    const unsubscribe = subscribeToOrders();
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [tenantId, loadOrders, loadTables, subscribeToOrders]);
 
   const updateOrderStatus = async (orderId: string, newStatus: POSOrder['status']) => {
     try {
