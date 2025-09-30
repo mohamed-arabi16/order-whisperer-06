@@ -1,72 +1,47 @@
-import { Component, ErrorInfo, ReactNode } from "react";
-import { Button } from "@/components/ui/button";
-import { AlertTriangle } from "lucide-react";
+import React, { Component, ErrorInfo, ReactNode } from "react";
 
-/**
- * @interface Props
- * @property {ReactNode} children - The child components to render.
- */
 interface Props {
   children: ReactNode;
+  fallback?: ReactNode;
 }
 
-/**
- * @interface State
- * @property {boolean} hasError - Whether an error has been caught.
- */
 interface State {
   hasError: boolean;
+  error?: Error;
 }
 
-/**
- * A component that catches JavaScript errors anywhere in its child component tree,
- * logs those errors, and displays a fallback UI instead of the component tree that crashed.
- */
 class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
   };
 
-  /**
-   * A lifecycle method that is invoked after an error has been thrown by a descendant component.
-   * @param {Error} _ - The error that was thrown.
-   * @returns {State} An object to update the state.
-   */
-  public static getDerivedStateFromError(_: Error): State {
-    return { hasError: true };
+  public static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
   }
 
-  /**
-   * A lifecycle method that is invoked after an error has been thrown by a descendant component.
-   * @param {Error} error - The error that was thrown.
-   * @param {ErrorInfo} errorInfo - An object with a `componentStack` key containing information about which component threw the error.
-   */
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Enhanced error logging for debugging
-    console.error("=== ERROR BOUNDARY CAUGHT ERROR ===");
-    console.error("Error:", error);
-    console.error("Error Info:", errorInfo);
-    console.error("Component Stack:", errorInfo.componentStack);
-    console.error("Error Stack:", error.stack);
-    console.error("=====================================");
+    console.error("Uncaught error in ErrorBoundary:", error, errorInfo);
   }
 
-  /**
-   * Renders the component.
-   * @returns {ReactNode} The rendered component.
-   */
   public render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
       return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-background text-center p-4" role="alert">
-          <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
-          <h1 className="text-3xl font-bold text-destructive mb-2">Something went wrong</h1>
-          <p className="text-lg text-muted-foreground mb-6">
-            We've encountered an unexpected error. Please try refreshing the page.
-          </p>
-          <Button onClick={() => window.location.reload()} variant="destructive">
-            Reload Page
-          </Button>
+        <div style={{ padding: '20px', border: '1px solid #d9534f', borderRadius: '8px', backgroundColor: '#f2dede', color: '#a94442', margin: '20px' }}>
+          <h1 style={{ marginBottom: '10px', fontSize: '1.5rem' }}>Something went wrong.</h1>
+          <p>An unexpected error has occurred. Please try refreshing the page or contact support if the problem persists.</p>
+          {import.meta.env.MODE === 'development' && (
+            <details style={{ marginTop: '20px', backgroundColor: '#fff', padding: '10px', borderRadius: '4px', border: '1px solid #ddd' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Error Details</summary>
+              <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginTop: '10px', color: '#333' }}>
+                {this.state.error?.toString()}
+                <br />
+                {this.state.error?.stack}
+              </pre>
+            </details>
+          )}
         </div>
       );
     }

@@ -4,17 +4,20 @@ export default defineConfig({
   testDir: './tests',
 
   webServer: {
-    command: 'bun run build && bun run preview --port 5173',
-    port: 5173,
+    // Use the development server for testing to enable mocking.
+    command: 'bun run dev --port 8080',
+    port: 8080,
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
     env: {
-      NODE_ENV: 'production',
+      // Set the environment to development to match the dev server.
+      NODE_ENV: 'development',
     },
   },
 
   use: {
-    baseURL: 'http://localhost:5173',
+    // Update the baseURL to match the dev server port.
+    baseURL: 'http://localhost:8080',
     serviceWorkers: 'block',
     trace: 'on-first-retry',
   },

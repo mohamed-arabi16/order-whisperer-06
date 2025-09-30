@@ -36,6 +36,15 @@
     "viewCount": "View Count"
   },
   "pos": {
+    "errors": {
+      "noSlug": "Restaurant slug not provided in the URL.",
+      "tenantFetchFailed": "Failed to fetch tenant information.",
+      "tenantNotFound": "Tenant not found for the provided slug.",
+      "posAccessFailed": "Failed to access POS system.",
+      "loadingTimeout": "Loading timed out. Please try again.",
+      "premiumRequired": "POS access requires a Premium subscription.",
+      "unauthorized": "You are not authorized to access this POS."
+    },
     "dashboard": {
       "title": "POS System",
       "description": "Real-time order management with advanced analytics",

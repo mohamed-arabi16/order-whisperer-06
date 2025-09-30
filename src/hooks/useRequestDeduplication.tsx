@@ -1,45 +1,34 @@
 import { useRef, useCallback } from 'react';
 
 /**
- * Hook to prevent duplicate API requests
+ * Hook to prevent duplicate API requests by caching the promise of in-flight requests.
+ * This is more efficient than polling and allows the caller to implement their own timeout logic.
  */
 export const useRequestDeduplication = () => {
-  const activeRequests = useRef<Set<string>>(new Set());
+  // Use a Map to store the promise of the in-flight request.
+  const activeRequests = useRef<Map<string, Promise<any>>>(new Map());
 
   const executeRequest = useCallback(async <T,>(
     key: string,
     requestFn: () => Promise<T>
   ): Promise<T> => {
-    // If request is already in progress, wait for it to complete
-    if (activeRequests.current.has(key)) {
-      // Return a promise that resolves when the active request completes
-      return new Promise<T>((resolve, reject) => {
-        const checkInterval = setInterval(() => {
-          if (!activeRequests.current.has(key)) {
-            clearInterval(checkInterval);
-            // Re-execute the request since we don't have the original result
-            executeRequest(key, requestFn).then(resolve).catch(reject);
-          }
-        }, 100);
-        
-        // Timeout after 30 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          reject(new Error('Request timeout'));
-        }, 30000);
-      });
+    // If a request with the same key is already in progress, return its promise.
+    const existingRequest = activeRequests.current.get(key);
+    if (existingRequest) {
+      return existingRequest;
     }
 
-    // Mark request as active
-    activeRequests.current.add(key);
-
-    try {
-      const result = await requestFn();
-      return result;
-    } finally {
-      // Remove from active requests
+    // Otherwise, execute the new request.
+    const newRequestPromise = requestFn().finally(() => {
+      // Once the request is complete (either resolved or rejected),
+      // remove it from the active requests map. This allows subsequent calls to re-trigger the request.
       activeRequests.current.delete(key);
-    }
+    });
+
+    // Store the new request promise in the map.
+    activeRequests.current.set(key, newRequestPromise);
+
+    return newRequestPromise;
   }, []);
 
   return { executeRequest };

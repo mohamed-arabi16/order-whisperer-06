@@ -10,6 +10,7 @@ import { Suspense, lazy } from "react";
 import Header from "./components/Header";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FloatingLanguageSwitcher from "./components/FloatingLanguageSwitcher";
+import { DebugPanel } from "./components/DebugPanel";
 
 // Lazy load pages for better code splitting
 const Index = lazy(() => import("./pages/Index"));
@@ -46,6 +47,7 @@ const App = (): JSX.Element => (
             <ErrorBoundary>
               <Header />
               <FloatingLanguageSwitcher />
+              <DebugPanel />
               <Suspense fallback={
                 <div className="min-h-screen flex items-center justify-center">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
