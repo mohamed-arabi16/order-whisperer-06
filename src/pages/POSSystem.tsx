@@ -20,12 +20,8 @@ const POSSystem = (): JSX.Element => {
 
   useEffect(() => {
     const checkSubscription = async () => {
-      if (process.env.NODE_ENV === 'development') {
-        console.log("POSSystem: Checking subscription for slug:", slug);
-      }
-      
       if (!slug) {
-        toast.error("No restaurant identifier provided in URL");
+        toast.error(t("pos.errors.noSlug"));
         setCheckingSubscription(false);
         return;
       }
@@ -39,52 +35,46 @@ const POSSystem = (): JSX.Element => {
 
         if (error) {
           console.error("POSSystem: Error fetching tenant:", error);
-          toast.error("Failed to verify restaurant access. Please try again.");
+          toast.error(t("pos.errors.tenantFetchFailed"));
           throw error;
         }
 
         if (!tenantData) {
-          toast.error("Restaurant not found. Please check the URL and try again.");
+          toast.error(t("pos.errors.tenantNotFound"));
           setTenant(null);
           setCheckingSubscription(false);
           return;
         }
 
-        if (process.env.NODE_ENV === 'development') {
-          console.log("POSSystem: Found tenant:", tenantData);
-        }
         setTenant(tenantData);
       } catch (error) {
         console.error('POSSystem: Error checking subscription:', error);
-        toast.error("Unable to access POS system. Please contact support if this continues.");
+        toast.error(t("pos.errors.posAccessFailed"));
       } finally {
         setCheckingSubscription(false);
       }
     };
 
     checkSubscription();
-  }, [slug]);
+  }, [slug, t]);
 
   // Add loading timeout to prevent infinite loading - fire only once on mount
   useEffect(() => {
-    const timer = setTimeout(() => setLoadingTimeout(true), 10000);
+    const timer = setTimeout(() => {
+      setLoadingTimeout(true);
+      if (loading || checkingSubscription) {
+        toast.error(t("pos.errors.loadingTimeout"));
+      }
+    }, 8000); // Reduced to 8 seconds for better UX
     return () => clearTimeout(timer);
   }, []);
 
-  // Debug logging - only in development
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log("POSSystem: Auth state - loading:", loading, "user:", !!user, "tenantId:", tenantId, "isAdmin:", isAdmin);
-      console.log("POSSystem: Subscription state - checking:", checkingSubscription, "tenant:", tenant);
-    }
-  }, [loading, user, tenantId, isAdmin, checkingSubscription, tenant]);
-
-  const isStillLoadingAuth = loading && !user;
-  const isStillLoadingSubscription = checkingSubscription && !tenant && !user;
-  const shouldShowTimeout = loadingTimeout && (isStillLoadingAuth || isStillLoadingSubscription);
+  // Simplified loading state - timeout triggers regardless of auth state
+  const isStillLoading = (loading || checkingSubscription) && !loadingTimeout;
+  const shouldShowTimeout = loadingTimeout && (loading || checkingSubscription);
 
   // Only show loading if we're actually loading and haven't timed out
-  if ((loading || checkingSubscription) && !loadingTimeout) {
+  if (isStillLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background to-secondary/20 flex items-center justify-center">
         <div className="text-center">
@@ -120,12 +110,12 @@ const POSSystem = (): JSX.Element => {
 
   if (!isAdmin && tenant) {
     if (tenant.subscription_plan !== 'premium') {
-      toast.error("Premium subscription required to access POS system");
+      toast.error(t("pos.errors.premiumRequired"));
       return <Navigate to={`/pos-access/${slug}`} replace />;
     }
     // Only allow restaurant owners to access their own premium tenant
     if (isRestaurantOwner && tenantId && tenant.id !== tenantId) {
-      toast.error("You are not authorized to access this restaurant's POS system");
+      toast.error(t("pos.errors.unauthorized"));
       return <Navigate to={`/dashboard`} replace />;
     }
   }

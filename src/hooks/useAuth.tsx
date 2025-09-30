@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useRequestDeduplication } from "@/hooks/useRequestDeduplication";
 
 /**
  * @interface AuthContextType
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<any>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { executeRequest } = useRequestDeduplication();
 
   useEffect(() => {
     let mounted = true;
@@ -95,10 +97,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Add fallback timeout to ensure loading state is cleared
     const fallbackTimeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn("useAuth: Authentication loading timeout reached");
+        console.warn("useAuth: Authentication loading timeout");
         setLoading(false);
       }
-    }, 10000); // 10 second fallback for consistency
+    }, 8000); // 8 second fallback
 
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
@@ -148,62 +150,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     
     const resolveTenant = async () => {
-      if (process.env.NODE_ENV === 'development') {
-        console.log("useAuth: Resolving tenant for profile:", profile);
-      }
-      
       if (!mounted) return;
       
       if (!profile) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log("useAuth: No profile found, setting tenantId to null");
-        }
         setTenantId(null);
         return;
       }
 
-      // 1. Optimistically check for a tenant_id on the profile directly.
-      // This is the ideal case for staff members in the future.
+      // 1. Check for tenant_id on profile (for staff members)
       if (profile.tenant_id) {
-        if (process.env.NODE_ENV === 'development') {
-          console.log("useAuth: Found tenant_id on profile:", profile.tenant_id);
-        }
         if (mounted) setTenantId(profile.tenant_id);
         return;
       }
 
-      // 2. Fallback for restaurant owners
+      // 2. Fallback for restaurant owners - use request deduplication
       if (profile.role === 'restaurant_owner') {
-        if (process.env.NODE_ENV === 'development') {
-          console.log("useAuth: Restaurant owner detected, looking up tenant...");
-        }
         try {
-          const { data: tenant, error } = await supabase
-            .from('tenants')
-            .select('id')
-            .eq('owner_id', profile.id)
-            .maybeSingle(); // Use maybeSingle to handle no results gracefully
+          const tenant = await executeRequest(
+            `tenant-lookup-${profile.id}`,
+            async () => {
+              const { data, error } = await supabase
+                .from('tenants')
+                .select('id')
+                .eq('owner_id', profile.id)
+                .maybeSingle();
 
-          if (error) {
-            console.error("useAuth: Error querying tenant:", error);
-            if (mounted) setTenantId(null);
-            return;
-          }
-
-          const resolvedTenantId = tenant?.id || null;
-          if (process.env.NODE_ENV === 'development') {
-            console.log("useAuth: Resolved tenant for owner:", resolvedTenantId);
-          }
-          
-          if (mounted) {
-            setTenantId(resolvedTenantId);
-            
-            if (!resolvedTenantId && process.env.NODE_ENV === 'development') {
-              console.warn("useAuth: Restaurant owner profile found, but no tenant associated.");
+              if (error) throw error;
+              return data;
             }
+          );
+
+          if (mounted) {
+            setTenantId(tenant?.id || null);
           }
         } catch (err) {
-          console.error("useAuth: Error resolving tenant for owner:", err);
+          console.error("useAuth: Error resolving tenant:", err);
           if (mounted) setTenantId(null);
         }
         return;
@@ -211,27 +192,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // 3. Handle super_admin role
       if (profile.role === 'super_admin') {
-        if (process.env.NODE_ENV === 'development') {
-          console.log("useAuth: Super admin detected, setting tenantId to null");
-        }
         if (mounted) setTenantId(null);
         return;
       }
 
-      // 4. Default to null if no tenant can be resolved
-      if (process.env.NODE_ENV === 'development') {
-        console.log("useAuth: No tenant resolution path matched, setting tenantId to null");
-      }
+      // 4. Default to null
       if (mounted) setTenantId(null);
     };
 
-    // Add timeout for tenant resolution to prevent hanging
+    // Add timeout for tenant resolution
     const tenantTimeout = setTimeout(() => {
       if (mounted) {
-        console.warn("useAuth: Tenant resolution timeout, setting to null");
+        console.warn("useAuth: Tenant resolution timeout");
         setTenantId(null);
       }
-    }, 10000); // 10 second timeout
+    }, 8000); // 8 second timeout
 
     resolveTenant().finally(() => {
       if (mounted) clearTimeout(tenantTimeout);
@@ -241,7 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       clearTimeout(tenantTimeout);
     };
-  }, [profile]);
+  }, [profile, executeRequest]);
 
   const signUp = async (
     email: string,
