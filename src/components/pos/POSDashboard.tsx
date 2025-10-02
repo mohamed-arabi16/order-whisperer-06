@@ -306,16 +306,22 @@ export const POSDashboard: React.FC = () => {
           }
         }
       )
-      .subscribe((status, err) => {
-        if (err) {
-          console.error('POSDashboard: Real-time subscription error:', err);
+      .subscribe((status) => {
+        const statusStr = String(status).toLowerCase();
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log('POSDashboard: Real-time subscription status:', statusStr);
+        }
+        
+        if (statusStr === 'subscribed') {
+          setSubscriptionStatus('subscribed');
+        } else if (statusStr === 'closed') {
+          setSubscriptionStatus('closed');
+        } else if (statusStr.includes('error')) {
           setSubscriptionStatus('error');
           toast.error('Real-time connection failed. Orders may not update automatically.');
         } else {
-          setSubscriptionStatus(status.toLowerCase());
-          if (process.env.NODE_ENV === 'development') {
-            console.log('POSDashboard: Real-time subscription status:', status);
-          }
+          setSubscriptionStatus(statusStr);
         }
       });
 
