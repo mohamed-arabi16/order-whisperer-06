@@ -96,7 +96,14 @@
     "welcome": "مرحباً",
     "superAdmin": "المدير العام",
     "restaurantOwner": "مالك المطعم",
-    "setupInProgress": "جاري إعداد لوحة التحكم..."
+    "setupInProgress": "جاري إعداد لوحة التحكم...",
+    "roleError": {
+      "title": "مشكلة في دور الحساب",
+      "description": "دور حسابك غير معروف. يرجى التواصل مع الدعم الفني لحل هذه المشكلة.",
+      "invalidRole": "الدور الحالي",
+      "signOut": "تسجيل الخروج",
+      "contactSupport": "تواصل مع الدعم: admin@restaurantos.com"
+    }
   },
   "superAdmin": {
     "title": "لوحة تحكم المدير العام",

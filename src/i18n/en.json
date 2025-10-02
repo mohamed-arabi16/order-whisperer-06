@@ -436,7 +436,14 @@
     "restaurantOwner": "Restaurant Owner",
     "setupInProgress": "Setting up dashboard...",
     "superAdmin": "Super Admin",
-    "welcome": "Welcome"
+    "welcome": "Welcome",
+    "roleError": {
+      "title": "Account Role Issue",
+      "description": "Your account role is not recognized. Please contact support to resolve this issue.",
+      "invalidRole": "Current role",
+      "signOut": "Sign Out",
+      "contactSupport": "Contact support: admin@restaurantos.com"
+    }
   },
   "editTenantDialog": {
     "addressLabel": "Address (optional)",

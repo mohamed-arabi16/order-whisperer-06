@@ -2,8 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { useRequestDeduplication } from "@/hooks/useRequestDeduplication";
-import { withTimeout } from "@/utils/promise";
+import { USER_ROLES } from "@/lib/constants";
 
 /**
  * @interface AuthContextType
@@ -50,7 +49,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<any>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const { executeRequest } = useRequestDeduplication();
 
   useEffect(() => {
     // Test-specific mock logic
@@ -64,148 +62,101 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let mounted = true;
-    console.log(`[${new Date().toISOString()}] [useAuth] AuthProvider mounted. Setting up onAuthStateChange listener.`);
+    console.log(`[${new Date().toISOString()}] [useAuth] AuthProvider mounted.`);
 
+    // Set a global timeout to ensure loading never hangs indefinitely
     const globalTimeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn(`[${new Date().toISOString()}] [useAuth] Global loading timeout reached (10s). Forcing loading to false.`);
+        console.warn(`[${new Date().toISOString()}] [useAuth] Global timeout (8s). Forcing loading to false.`);
         setLoading(false);
       }
-    }, 10000);
+    }, 8000);
     
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log(`[${new Date().toISOString()}] [useAuth] onAuthStateChange event triggered.`, { event: _event, session });
-      if (!mounted) {
-        console.log(`[${new Date().toISOString()}] [useAuth] Component unmounted, ignoring auth state change.`);
-        return;
-      }
+      console.log(`[${new Date().toISOString()}] [useAuth] Auth event: ${_event}`);
+      
+      if (!mounted) return;
       
       setSession(session);
       setUser(session?.user ?? null);
-      console.log(`[${new Date().toISOString()}] [useAuth] Session and user state updated.`, { userId: session?.user?.id });
       
-      // Clear profile and set loading to false if no session
+      // Clear state if no session
       if (!session?.user) {
         if (mounted) {
-          console.log(`[${new Date().toISOString()}] [useAuth] No user session found. Clearing profile and stopping loading.`);
+          console.log(`[${new Date().toISOString()}] [useAuth] No session, clearing state.`);
           setProfile(null);
+          setTenantId(null);
           setLoading(false);
         }
         return;
       }
 
-      // Fetch profile data
-      console.log(`[${new Date().toISOString()}] [useAuth] User session found. Fetching profile...`);
+      // Fetch profile - simplified without complex timeout wrapper
+      console.log(`[${new Date().toISOString()}] [useAuth] Fetching profile for user ${session.user.id}`);
       try {
-        const profilePromise = supabase
+        const { data: profileData, error } = await supabase
           .from("profiles")
           .select("*")
           .eq("user_id", session.user.id)
           .single();
 
-        const { data: profileData, error } = await withTimeout(profilePromise, 3000, new Error('Profile fetch timed out'));
+        if (!mounted) return;
 
-        if (!mounted) {
-          console.log(`[${new Date().toISOString()}] [useAuth] Component unmounted, ignoring profile fetch result.`);
+        if (error) {
+          console.error("useAuth: Profile fetch error:", error);
+          setProfile(null);
+          setLoading(false);
           return;
         }
 
-        if (error) {
-          console.error("useAuth: Error fetching profile:", error);
-          setProfile(null);
-        } else {
-          console.log(`[${new Date().toISOString()}] [useAuth] Profile fetched successfully.`, { profile: profileData });
-          setProfile(profileData);
+        console.log(`[${new Date().toISOString()}] [useAuth] Profile loaded:`, profileData);
+        setProfile(profileData);
+        
+        // Resolve tenant asynchronously (non-blocking)
+        if (profileData.role === USER_ROLES.RESTAURANT_OWNER) {
+          console.log(`[${new Date().toISOString()}] [useAuth] Looking up tenant for restaurant owner`);
+          // Don't block on tenant lookup - do it async
+          (async () => {
+            try {
+              const { data } = await supabase
+                .from("tenants")
+                .select("id")
+                .eq("owner_id", profileData.id)
+                .maybeSingle();
+              
+              if (mounted && data) {
+                setTenantId(data.id);
+              }
+            } catch (err) {
+              console.error("useAuth: Tenant lookup error:", err);
+            }
+          })();
         }
+        
+        // Set loading to false immediately after profile is loaded
+        setLoading(false);
+        
       } catch (err) {
         if (mounted) {
-          console.error("useAuth: Profile fetch failed:", err);
+          console.error("useAuth: Profile fetch exception:", err);
           setProfile(null);
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false); // Always set loading to false after profile resolution
-          console.log(`[${new Date().toISOString()}] [useAuth] Profile resolution finished. Loading state set to false.`);
+          setLoading(false);
         }
       }
     });
 
-    // The getSession() call is removed to rely solely on onAuthStateChange,
-    // which is now triggered upon initial load. This simplifies the logic
-    // and prevents race conditions.
-
     return () => {
       mounted = false;
-      console.log(`[${new Date().toISOString()}] [useAuth] AuthProvider unmounted. Unsubscribing from onAuthStateChange.`);
+      console.log(`[${new Date().toISOString()}] [useAuth] Cleanup.`);
       clearTimeout(globalTimeout);
       subscription.unsubscribe();
     };
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-
-    const resolveTenant = async () => {
-      console.log(`[${new Date().toISOString()}] [useAuth] Attempting to resolve tenant...`, { profile });
-      if (!mounted || !profile) {
-        if (profile === null) console.log(`[${new Date().toISOString()}] [useAuth] No profile, clearing tenantId.`);
-        setTenantId(null);
-        return;
-      }
-
-      try {
-        // 1. Staff members have tenant_id directly on their profile.
-        if (profile.tenant_id) {
-          console.log(`[${new Date().toISOString()}] [useAuth] Resolved tenant from profile.tenant_id (staff member).`, { tenantId: profile.tenant_id });
-          if (mounted) setTenantId(profile.tenant_id);
-          return;
-        }
-
-        // 2. Restaurant owners need their tenant looked up.
-        if (profile.role === "restaurant_owner") {
-          console.log(`[${new Date().toISOString()}] [useAuth] Profile is restaurant_owner. Looking up tenant...`);
-
-          const tenantLookupPromise = executeRequest(
-            `tenant-lookup-${profile.id}`,
-            async () => {
-              const { data, error } = await supabase
-                .from("tenants")
-                .select("id")
-                .eq("owner_id", profile.id)
-                .maybeSingle();
-
-              if (error) {
-                console.error("useAuth: Tenant lookup failed inside executeRequest:", error);
-                throw error;
-              }
-              return data;
-            }
-          );
-
-          const tenant = await withTimeout(tenantLookupPromise, 3000, new Error('Tenant lookup timed out'));
-
-          console.log(`[${new Date().toISOString()}] [useAuth] Tenant lookup complete.`, { tenantId: tenant?.id });
-          if (mounted) setTenantId(tenant?.id || null);
-          return;
-        }
-
-        // 3. Super admins and other roles do not have a tenant.
-        console.log(`[${new Date().toISOString()}] [useAuth] Profile is not staff or owner (e.g., super_admin). No tenant to resolve.`);
-        if (mounted) setTenantId(null);
-      } catch (err) {
-        console.error("useAuth: Failed to resolve tenant:", err);
-        if (mounted) setTenantId(null);
-      }
-    };
-
-    resolveTenant();
-
-    return () => {
-      mounted = false;
-    };
-  }, [profile, executeRequest]);
+  // Tenant resolution is now handled inline in the auth state change handler above
+  // This prevents the complex second useEffect that was causing issues
 
   const signUp = async (
     email: string,
@@ -265,8 +216,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
-  const isAdmin = profile?.role === "super_admin";
-  const isRestaurantOwner = profile?.role === "restaurant_owner";
+  const isAdmin = profile?.role === USER_ROLES.SUPER_ADMIN;
+  const isRestaurantOwner = profile?.role === USER_ROLES.RESTAURANT_OWNER;
 
   const value = {
     user,
